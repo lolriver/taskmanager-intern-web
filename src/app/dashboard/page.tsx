@@ -1,71 +1,108 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useAuth } from '@/app/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
-import { toast } from 'sonner';
-import { 
-  Plus, Search, Edit2, Trash2, CheckCircle2, Circle, Clock, Loader2, LogOut, LayoutGrid
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  CheckCircle2,
+  Circle,
+  Clock,
+  Edit2,
+  LayoutGrid,
+  Loader2,
+  LogOut,
+  Plus,
+  Search,
+  Trash2,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
+import { useAuth } from '@/app/context/AuthContext';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { getApiErrorMessage, type ApiErrorPayload } from '@/lib/api-errors';
+
+type TaskStatus = 'Pending' | 'In Progress' | 'Completed';
 
 interface Task {
   _id: string;
   title: string;
   description: string;
-  status: 'Pending' | 'In Progress' | 'Completed';
+  status: TaskStatus;
   createdAt: string;
+}
+
+const emptyTaskForm = {
+  title: '',
+  description: '',
+  status: 'Pending' as TaskStatus,
+};
+
+async function readApiPayload(response: Response) {
+  return (await response.json().catch(() => null)) as ApiErrorPayload | Record<string, any> | null;
 }
 
 export default function Dashboard() {
   const { user, logout, loading } = useAuth();
   const router = useRouter();
-  
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isFetchingTasks, setIsFetchingTasks] = useState(true);
-  
-  // Pagination & Filters
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
+
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [search, setSearch] = useState('');
 
-  // Modals state
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [currentTask, setCurrentTask] = useState<Task | null>(null);
+  const [formData, setFormData] = useState(emptyTaskForm);
 
-  // Form State
-  const [formData, setFormData] = useState({ title: '', description: '', status: 'Pending' });
-
-  // Protected route check
   useEffect(() => {
     if (!loading && !user) {
-      router.push('/login');
+      router.replace('/login');
     }
-  }, [user, loading, router]);
+  }, [loading, router, user]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter]);
 
   const fetchTasks = async () => {
     setIsFetchingTasks(true);
-    let url = `/api/tasks?page=${page}&limit=6`;
-    if (statusFilter !== 'All') url += `&status=${statusFilter}`;
-    if (search) url += `&search=${search}`;
+
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: '6',
+    });
+
+    if (statusFilter !== 'All') {
+      params.set('status', statusFilter);
+    }
+
+    if (search.trim()) {
+      params.set('search', search.trim());
+    }
 
     try {
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        setTasks(data.tasks);
-        setTotalPages(data.pagination.totalPages);
+      const res = await fetch(`/api/tasks?${params.toString()}`);
+      const data = await readApiPayload(res);
+
+      if (!res.ok) {
+        toast.error(getApiErrorMessage(data as ApiErrorPayload | null, 'Failed to fetch tasks'));
+        return;
       }
-    } catch (e) {
+
+      setTasks((data as { tasks: Task[] }).tasks ?? []);
+      setTotalPages((data as { pagination?: { totalPages?: number } }).pagination?.totalPages ?? 1);
+    } catch {
       toast.error('Failed to fetch tasks');
     } finally {
       setIsFetchingTasks(false);
@@ -74,85 +111,143 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (user) {
-      fetchTasks();
+      void fetchTasks();
     }
   }, [user, page, statusFilter, search]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
+
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          title: formData.title.trim(),
+          description: formData.description.trim(),
+        }),
       });
-      if (res.ok) {
-        toast.success('Task created successfully');
-        setIsCreateOpen(false);
-        setFormData({ title: '', description: '', status: 'Pending' });
-        fetchTasks();
-      } else {
-        toast.error('Failed to create task');
+
+      const data = await readApiPayload(res);
+
+      if (!res.ok) {
+        toast.error(getApiErrorMessage(data as ApiErrorPayload | null, 'Failed to create task'));
+        return;
       }
-    } catch (e) {
+
+      toast.success('Task created successfully');
+      setIsCreateOpen(false);
+      setFormData(emptyTaskForm);
+      await fetchTasks();
+    } catch {
       toast.error('An error occurred');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentTask) return;
+    if (!currentTask) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
     try {
       const res = await fetch(`/api/tasks/${currentTask._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          title: formData.title.trim(),
+          description: formData.description.trim(),
+        }),
       });
-      if (res.ok) {
-        toast.success('Task updated successfully');
-        setIsEditOpen(false);
-        fetchTasks();
-      } else {
-        toast.error('Failed to update task');
+
+      const data = await readApiPayload(res);
+
+      if (!res.ok) {
+        toast.error(getApiErrorMessage(data as ApiErrorPayload | null, 'Failed to update task'));
+        return;
       }
-    } catch (e) {
+
+      toast.success('Task updated successfully');
+      setIsEditOpen(false);
+      setCurrentTask(null);
+      await fetchTasks();
+    } catch {
       toast.error('An error occurred');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this task?')) return;
+    if (!confirm('Are you sure you want to delete this task?')) {
+      return;
+    }
+
+    setDeletingTaskId(id);
+
     try {
       const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        toast.success('Task deleted');
-        fetchTasks();
-      } else {
-        toast.error('Failed to delete task');
+      const data = await readApiPayload(res);
+
+      if (!res.ok) {
+        toast.error(getApiErrorMessage(data as ApiErrorPayload | null, 'Failed to delete task'));
+        return;
       }
-    } catch (e) {
+
+      toast.success('Task deleted');
+      await fetchTasks();
+    } catch {
       toast.error('An error occurred');
+    } finally {
+      setDeletingTaskId(null);
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: TaskStatus) => {
     switch (status) {
-      case 'Completed': return <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 border-emerald-500/20"><CheckCircle2 className="w-3 h-3 mr-1" />Completed</Badge>;
-      case 'In Progress': return <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border-amber-500/20"><Clock className="w-3 h-3 mr-1" />In Progress</Badge>;
-      default: return <Badge className="bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 border-blue-500/20"><Circle className="w-3 h-3 mr-1" />Pending</Badge>;
+      case 'Completed':
+        return (
+          <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 border-emerald-500/20">
+            <CheckCircle2 className="w-3 h-3 mr-1" />
+            Completed
+          </Badge>
+        );
+      case 'In Progress':
+        return (
+          <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border-amber-500/20">
+            <Clock className="w-3 h-3 mr-1" />
+            In Progress
+          </Badge>
+        );
+      default:
+        return (
+          <Badge className="bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 border-blue-500/20">
+            <Circle className="w-3 h-3 mr-1" />
+            Pending
+          </Badge>
+        );
     }
   };
 
   if (loading || !user) {
-    return <div className="flex h-screen w-full items-center justify-center bg-background"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
   }
 
   return (
     <div className="min-h-screen bg-background relative selection:bg-primary/20">
-      {/* Background gradients */}
       <div className="absolute top-0 right-0 w-[500px] h-[500px] opacity-10 blur-[100px] bg-gradient-to-bl from-indigo-500 to-purple-500 pointer-events-none rounded-full" />
-      
-      {/* Navbar */}
+
       <header className="sticky top-0 z-40 w-full border-b border-border/40 bg-background/80 backdrop-blur-xl supports-backdrop-filter:bg-background/60">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -176,64 +271,82 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 z-10 relative">
-        {/* Header Actions */}
         <div className="flex flex-col md:flex-row gap-6 items-start md:items-center justify-between mb-10">
           <div>
             <h2 className="text-3xl font-extrabold tracking-tight">Task Dashboard</h2>
             <p className="text-muted-foreground mt-1 text-sm">Organize, strategize, and execute your objectives.</p>
           </div>
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger 
-              render={<Button className="w-full md:w-auto h-11 px-6 shadow-xl shadow-primary/20 hover:scale-105 transition-transform" />}
-              onClick={() => setFormData({ title: '', description: '', status: 'Pending' })}
-            >
-              <Plus className="w-4 h-4 mr-2" /> Create Task
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
-              <DialogHeader>
-                <DialogTitle>Create New Task</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleCreate} className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>Task Title</Label>
-                  <Input value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} required autoFocus className="bg-muted/50" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Description</Label>
-                  <Input value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} className="bg-muted/50" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Status Status</Label>
-                  <Select value={formData.status} onValueChange={(v: any) => setFormData({...formData, status: v})}>
-                    <SelectTrigger className="bg-muted/50"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Pending">Pending</SelectItem>
-                      <SelectItem value="In Progress">In Progress</SelectItem>
-                      <SelectItem value="Completed">Completed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <DialogFooter className="pt-4">
-                  <Button type="submit" className="w-full">Create Task</Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <Button
+            type="button"
+            className="w-full md:w-auto h-11 px-6 shadow-xl shadow-primary/20 hover:scale-105 transition-transform"
+            onClick={() => {
+              setCurrentTask(null);
+              setFormData(emptyTaskForm);
+              setIsCreateOpen(true);
+            }}
+          >
+            <Plus className="w-4 h-4 mr-2" /> Create Task
+          </Button>
         </div>
 
-        {/* Filters */}
+        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Create New Task</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleCreate} className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Task Title</Label>
+                <Input
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  required
+                  autoFocus
+                  className="bg-muted/50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Input
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="bg-muted/50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={formData.status} onValueChange={(value: TaskStatus) => setFormData({ ...formData, status: value })}>
+                  <SelectTrigger className="bg-muted/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Pending">Pending</SelectItem>
+                    <SelectItem value="In Progress">In Progress</SelectItem>
+                    <SelectItem value="Completed">Completed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <DialogFooter className="pt-4">
+                <Button type="submit" className="w-full" disabled={isSubmitting}>
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create Task'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
         <div className="flex flex-col sm:flex-row gap-4 mb-8 bg-card p-4 rounded-2xl border border-border/50 shadow-sm">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input 
-              placeholder="Search by title..." 
-              value={search} 
-              onChange={(e) => setSearch(e.target.value)} 
+            <Input
+              placeholder="Search by title..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
               className="pl-9 h-10 bg-muted/50 border-transparent focus:border-ring transition-colors"
             />
           </div>
           <div className="w-full sm:w-48">
-            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v || 'All')}>
+            <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value || 'All')}>
               <SelectTrigger className="h-10 bg-muted/50 border-transparent focus:border-ring transition-colors">
                 <SelectValue placeholder="All Status" />
               </SelectTrigger>
@@ -247,9 +360,10 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Task Grid */}
         {isFetchingTasks && tasks.length === 0 ? (
-          <div className="flex justify-center py-32"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground/50" /></div>
+          <div className="flex justify-center py-32">
+            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground/50" />
+          </div>
         ) : tasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center text-center py-20 bg-muted/30 rounded-3xl border border-border/50 border-dashed">
             <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center text-muted-foreground mb-4">
@@ -285,25 +399,30 @@ export default function Dashboard() {
                     <CardFooter className="pt-4 pb-4 bg-muted/10 border-t border-border/40 flex justify-between items-center text-xs text-muted-foreground font-medium">
                       <span>{new Date(task.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                       <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="h-8 w-8 rounded-full text-blue-500 hover:text-blue-600 hover:bg-blue-500/10"
                           onClick={() => {
                             setCurrentTask(task);
-                            setFormData({ title: task.title, description: task.description, status: task.status });
+                            setFormData({
+                              title: task.title,
+                              description: task.description,
+                              status: task.status,
+                            });
                             setIsEditOpen(true);
                           }}
                         >
                           <Edit2 className="w-4 h-4" />
                         </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="h-8 w-8 rounded-full text-red-500 hover:text-red-600 hover:bg-red-500/10"
                           onClick={() => handleDelete(task._id)}
+                          disabled={deletingTaskId === task._id}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          {deletingTaskId === task._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                         </Button>
                       </div>
                     </CardFooter>
@@ -314,7 +433,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Edit Modal */}
         <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
@@ -323,16 +441,28 @@ export default function Dashboard() {
             <form onSubmit={handleEdit} className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label>Title</Label>
-                <Input value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} required autoFocus className="bg-muted/50" />
+                <Input
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  required
+                  autoFocus
+                  className="bg-muted/50"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Description</Label>
-                <Input value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} className="bg-muted/50" />
+                <Input
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="bg-muted/50"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Status</Label>
-                <Select value={formData.status} onValueChange={(v: any) => setFormData({...formData, status: v})}>
-                  <SelectTrigger className="bg-muted/50"><SelectValue /></SelectTrigger>
+                <Select value={formData.status} onValueChange={(value: TaskStatus) => setFormData({ ...formData, status: value })}>
+                  <SelectTrigger className="bg-muted/50">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Pending">Pending</SelectItem>
                     <SelectItem value="In Progress">In Progress</SelectItem>
@@ -341,20 +471,35 @@ export default function Dashboard() {
                 </Select>
               </div>
               <DialogFooter className="pt-4">
-                <Button type="submit" className="w-full">Save Changes</Button>
+                <Button type="submit" className="w-full" disabled={isSubmitting}>
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Changes'}
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
 
-        {/* Pagination Controls */}
         {totalPages > 1 && (
           <div className="flex justify-center items-center gap-4 mt-12 mb-8">
-            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="rounded-full shadow-sm">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))}
+              disabled={page === 1}
+              className="rounded-full shadow-sm"
+            >
               Previous
             </Button>
-            <span className="text-sm font-medium text-muted-foreground">Page <span className="text-foreground">{page}</span> of {totalPages}</span>
-            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="rounded-full shadow-sm">
+            <span className="text-sm font-medium text-muted-foreground">
+              Page <span className="text-foreground">{page}</span> of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((currentPage) => Math.min(totalPages, currentPage + 1))}
+              disabled={page === totalPages}
+              className="rounded-full shadow-sm"
+            >
               Next
             </Button>
           </div>

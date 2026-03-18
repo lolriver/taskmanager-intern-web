@@ -1,15 +1,16 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
-import { useAuth } from '@/app/context/AuthContext';
 import { motion } from 'framer-motion';
+import { ArrowLeft, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { useAuth } from '@/app/context/AuthContext';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { toast } from 'sonner';
-import Link from 'next/link';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { getApiErrorMessage, type ApiErrorPayload } from '@/lib/api-errors';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -28,15 +29,15 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
+      const data = (await res.json().catch(() => null)) as ApiErrorPayload | { user: { id: string; name: string; email: string } } | null;
 
-      if (res.ok) {
+      if (res.ok && data && 'user' in data) {
         toast.success('Logged in successfully');
         login(data.user);
       } else {
-        toast.error(data.error || 'Login failed');
+        toast.error(getApiErrorMessage(data as ApiErrorPayload | null, 'Login failed'));
       }
-    } catch (error) {
+    } catch {
       toast.error('Something went wrong');
     } finally {
       setLoading(false);
@@ -45,11 +46,8 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen w-full relative overflow-hidden bg-background">
-
-      {/* Abstract Glowing Gradients */}
       <div className="absolute top-1/2 left-0 -translate-y-1/2 -translate-x-1/3 w-[800px] h-[800px] opacity-20 pointer-events-none blur-[120px] bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-full" />
 
-      {/* Left Panel - Branding (Hidden on mobile) */}
       <div className="hidden lg:flex w-1/2 border-r border-border/50 bg-muted/20 items-center justify-center relative p-12">
         <div className="z-10 max-w-lg space-y-6">
           <Link href="/" className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground transition-colors mb-8">
@@ -65,7 +63,6 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Right Panel - Login Form */}
       <div className="flex-1 flex items-center justify-center p-6 sm:p-12 relative z-10">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
@@ -82,9 +79,7 @@ export default function LoginPage() {
           <Card className="border border-border/50 shadow-2xl shadow-primary/5 bg-background/80 backdrop-blur-xl rounded-2xl">
             <CardHeader className="space-y-2 text-center pb-8 pt-8">
               <CardTitle className="text-3xl font-bold tracking-tight">Sign In</CardTitle>
-              <CardDescription className="text-base">
-                Enter your email and password to continue.
-              </CardDescription>
+              <CardDescription className="text-base">Enter your email and password to continue.</CardDescription>
             </CardHeader>
             <form onSubmit={handleLogin}>
               <CardContent className="space-y-5 px-8">
@@ -101,9 +96,7 @@ export default function LoginPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="password" className="text-sm font-medium">Password</Label>
-                  </div>
+                  <Label htmlFor="password" className="text-sm font-medium">Password</Label>
                   <Input
                     id="password"
                     type="password"
@@ -111,7 +104,7 @@ export default function LoginPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     className="h-11 bg-muted/50 focus:bg-background transition-colors"
-                    placeholder="••••••••"
+                    placeholder="********"
                   />
                 </div>
               </CardContent>

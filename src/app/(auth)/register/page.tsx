@@ -1,15 +1,16 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
-import { useAuth } from '@/app/context/AuthContext';
 import { motion } from 'framer-motion';
+import { ArrowLeft, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { useAuth } from '@/app/context/AuthContext';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { toast } from 'sonner';
-import Link from 'next/link';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { getApiErrorMessage, type ApiErrorPayload } from '@/lib/api-errors';
 
 export default function RegisterPage() {
   const [name, setName] = useState('');
@@ -29,20 +30,15 @@ export default function RegisterPage() {
         body: JSON.stringify({ name, email, password }),
       });
 
-      const data = await res.json();
+      const data = (await res.json().catch(() => null)) as ApiErrorPayload | { user: { id: string; name: string; email: string } } | null;
 
-      if (res.ok) {
+      if (res.ok && data && 'user' in data) {
         toast.success('Registration successful. Welcome!');
         login(data.user);
       } else {
-        if (data.details) {
-          const errors = Object.values(data.details).join(', ');
-          toast.error(errors);
-        } else {
-          toast.error(data.error || 'Registration failed');
-        }
+        toast.error(getApiErrorMessage(data as ApiErrorPayload | null, 'Registration failed'));
       }
-    } catch (error) {
+    } catch {
       toast.error('Something went wrong');
     } finally {
       setLoading(false);
@@ -51,11 +47,8 @@ export default function RegisterPage() {
 
   return (
     <div className="flex min-h-screen w-full relative overflow-hidden bg-background">
-
-      {/* Abstract Glowing Gradients */}
       <div className="absolute top-1/2 right-0 -translate-y-1/2 translate-x-1/3 w-[800px] h-[800px] opacity-20 pointer-events-none blur-[120px] bg-gradient-to-tl from-purple-600 to-pink-600 rounded-full" />
 
-      {/* Right Panel - Branding (Hidden on mobile) */}
       <div className="hidden lg:flex w-1/2 border-l border-border/50 bg-muted/20 items-center justify-center relative p-12 order-last">
         <div className="z-10 max-w-lg space-y-6">
           <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center shadow-2xl shadow-primary/30">
@@ -68,7 +61,6 @@ export default function RegisterPage() {
         </div>
       </div>
 
-      {/* Left Panel - Register Form */}
       <div className="flex-1 flex items-center justify-center p-6 sm:p-12 relative z-10">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
@@ -85,9 +77,7 @@ export default function RegisterPage() {
           <Card className="border border-border/50 shadow-2xl shadow-primary/5 bg-background/80 backdrop-blur-xl rounded-2xl">
             <CardHeader className="space-y-2 text-center pb-8 pt-8">
               <CardTitle className="text-3xl font-bold tracking-tight">Create an account</CardTitle>
-              <CardDescription className="text-base">
-                Enter your details to create your secure workspace.
-              </CardDescription>
+              <CardDescription className="text-base">Enter your details to create your secure workspace.</CardDescription>
             </CardHeader>
             <form onSubmit={handleRegister}>
               <CardContent className="space-y-5 px-8">
@@ -124,7 +114,7 @@ export default function RegisterPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     className="h-11 bg-muted/50 focus:bg-background transition-colors"
-                    placeholder="••••••••"
+                    placeholder="********"
                   />
                 </div>
               </CardContent>

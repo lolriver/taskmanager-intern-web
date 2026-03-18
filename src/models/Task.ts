@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import User from './User';
 
 export interface ITask extends mongoose.Document {
   title: string;

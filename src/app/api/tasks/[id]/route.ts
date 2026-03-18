@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/db';
-import Task from '@/models/Task';
-import { z } from 'zod';
 import mongoose from 'mongoose';
+import { z } from 'zod';
+import dbConnect from '@/lib/db';
+import { createServerErrorResponse } from '@/lib/server-errors';
+import Task from '@/models/Task';
 
 const updateTaskSchema = z.object({
   title: z.string().min(1, 'Title is required').max(100).optional(),
@@ -26,7 +27,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const result = updateTaskSchema.safeParse(body);
 
     if (!result.success) {
-      return NextResponse.json({ error: 'Validation Error', details: result.error.flatten().fieldErrors }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Validation Error', details: result.error.flatten().fieldErrors },
+        { status: 400 }
+      );
     }
 
     await dbConnect();
@@ -42,8 +46,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
 
     return NextResponse.json({ message: 'Task updated', task });
-  } catch (error: any) {
-    return NextResponse.json({ error: 'Server error', details: error.message }, { status: 500 });
+  } catch (error) {
+    return createServerErrorResponse(error);
   }
 }
 
@@ -71,7 +75,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     }
 
     return NextResponse.json({ message: 'Task deleted successfully' });
-  } catch (error: any) {
-    return NextResponse.json({ error: 'Server error', details: error.message }, { status: 500 });
+  } catch (error) {
+    return createServerErrorResponse(error);
   }
 }

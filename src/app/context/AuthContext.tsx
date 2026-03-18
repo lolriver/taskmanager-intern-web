@@ -1,7 +1,7 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { startTransition, createContext, useContext, useEffect, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 
 interface User {
   id: string;
@@ -39,31 +39,36 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         } else {
           setUser(null);
         }
-      } catch (error) {
+      } catch {
         setUser(null);
       } finally {
         setLoading(false);
       }
     };
+
     fetchUser();
-  }, [pathname]); // Re-fetch slightly on path change just to ensure freshness, Middleware also secures the route anyway.
+  }, [pathname]);
 
   const login = (userData: User) => {
     setUser(userData);
-    router.push('/dashboard');
+
+    startTransition(() => {
+      router.replace('/dashboard');
+      router.refresh();
+    });
   };
 
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     setUser(null);
-    router.push('/login');
+
+    startTransition(() => {
+      router.replace('/login');
+      router.refresh();
+    });
   };
 
-  return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => useContext(AuthContext);

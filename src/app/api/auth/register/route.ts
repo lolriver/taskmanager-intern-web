@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/db';
-import User from '@/models/User';
-import { hashPassword, signToken } from '@/lib/auth';
 import { cookies } from 'next/headers';
 import { z } from 'zod';
+import dbConnect from '@/lib/db';
+import { hashPassword, signToken } from '@/lib/auth';
+import { createServerErrorResponse } from '@/lib/server-errors';
+import User from '@/models/User';
 
 const registerSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -26,19 +27,14 @@ export async function POST(req: Request) {
     await dbConnect();
 
     const { name, email, password } = result.data;
-    
-    // Check if user already exists
+
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return NextResponse.json(
-        { error: 'Email already in use' },
-        { status: 409 }
-      );
+      return NextResponse.json({ error: 'Email already in use' }, { status: 409 });
     }
 
-    // Hash the password securely and save the user
     const hashedPassword = await hashPassword(password);
-    
+
     const user = await User.create({
       name,
       email,
@@ -48,7 +44,7 @@ export async function POST(req: Request) {
     const token = await signToken({
       id: user._id.toString(),
       email: user.email,
-      name: user.name
+      name: user.name,
     });
 
     const cookieStore = await cookies();
@@ -64,10 +60,7 @@ export async function POST(req: Request) {
       { message: 'User registered securely', user: { id: user._id, name: user.name, email: user.email } },
       { status: 201 }
     );
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: 'Server error', details: error.message },
-      { status: 500 }
-    );
+  } catch (error) {
+    return createServerErrorResponse(error);
   }
 }
