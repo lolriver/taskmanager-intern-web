@@ -1,36 +1,76 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Task Management Application 🚀
 
-## Getting Started
+A production-ready full-stack Task Management application built to demonstrate modern backend architecture, secure authentication, frontend integration, and deployment readiness on Vercel.
 
-First, run the development server:
+## 🛠️ Tech Stack & Architecture
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **Frontend Framework:** Next.js 14 (App Router) & React
+- **UI & Styling:** Tailwind CSS, `shadcn/ui`, `framer-motion` (for micro-animations), `sonner` (for toasts).
+- **Backend APIs:** Next.js Route Handlers (`app/api/...`) providing monolithic tight integration with the client.
+- **Database:** MongoDB coupled with `mongoose` for powerful ORM capabilities.
+- **Authentication:** Custom JWT-based (`jose` library) secure flow. Passwords hashed via `bcryptjs`.
+- **Validation:** Strict payload and schema validation using `zod`.
+- **Security:**
+  - JWT Tokens securely stored in HTTP-Only, Secure, `SameSite=Strict` cookies.
+  - Next.js Edge Middleware route protection (blocks unauthorized access to `/dashboard` and backend API endpoints).
+  - Mongoose to inherently prevent generic NoSQL injections.
+  - Zod validation to sanitize payload endpoints.
+
+## 📦 Core Features
+
+1. **Authentication:** Register, Login, Logout with encrypted passwords and HTTP-Only cookies.
+2. **Task CRUD APIs:** Create, Read, Update, and Delete tasks via `fetch` API.
+3. **Advanced Filtering:** Pagination, Status filtering (Pending, In Progress, Completed), and live text search querying directly from the MongoDB store.
+4. **Beautiful UI:** Responsive design infused with glassmorphism components, loading states, and smooth Framer Motion transitions.
+
+## 🚀 Setup Instructions (Local & Deployment)
+
+### 1. Prerequisites
+- Node.js (v18+)
+- MongoDB connection string (e.g., from [MongoDB Atlas](https://www.mongodb.com/cloud/atlas))
+
+### 2. Environment Variables
+Rename or create a `.env` file at the root containing:
+
+```env
+# MongoDB Connection String (Required)
+MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.xxxxx.mongodb.net/taskapp?retryWrites=true&w=majority
+
+# Strong Random String for JWT Signing (Required)
+JWT_SECRET=your_super_secret_jwt_key_here_a2c8v3
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 3. Installation
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 4. Running Locally
+```bash
+npm run dev
+```
+Navigate to `http://localhost:3000`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## ☁️ Deployment (Vercel Recommended)
 
-## Learn More
+This application is strictly optimized for Vercel.
 
-To learn more about Next.js, take a look at the following resources:
+1. Push your code to a GitHub Repository.
+2. Link the repository to your Vercel Dashboard.
+3. In the **Environment Variables** section on Vercel, input your `MONGODB_URI` and a secure `JWT_SECRET`.
+4. Deploy! Vercel will automatically build the Next.js optimized bundles and deploy serverless functions for the API routes.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 📚 API Architecture Documentation
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Method | Endpoint | Description | Protected |
+|---|---|---|---|
+| `POST` | `/api/auth/register` | Create a new user account | ❌ No |
+| `POST` | `/api/auth/login` | Check credentials & set HTTP-only cookie | ❌ No |
+| `POST` | `/api/auth/logout` | Clear the authorization cookie | ❌ No |
+| `GET`  | `/api/auth/me` | Return the logged-in user profile from the cookie | ✅ Yes |
+| `GET`  | `/api/tasks` | Fetch tasks (Supports `?page`, `?limit`, `?status`, `?search`) | ✅ Yes |
+| `POST` | `/api/tasks` | Create a new task tied to the user | ✅ Yes |
+| `PUT`  | `/api/tasks/[id]` | Update an existing task status, title, description | ✅ Yes |
+| `DELETE`| `/api/tasks/[id]` | Remove a task | ✅ Yes |
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+All Protected APIs validate the HTTP-Only cookie and inject the verified `userId` in edge middleware headers prior to executing the route logic.
