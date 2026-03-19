@@ -315,7 +315,7 @@ export default function Dashboard() {
               </div>
               <div className="space-y-2">
                 <Label>Status</Label>
-                <Select value={formData.status} onValueChange={(value: TaskStatus) => setFormData({ ...formData, status: value })}>
+                <Select value={formData.status} onValueChange={(value) => value && setFormData({ ...formData, status: value as TaskStatus })}>
                   <SelectTrigger className="bg-muted/50">
                     <SelectValue />
                   </SelectTrigger>
@@ -459,7 +459,7 @@ export default function Dashboard() {
               </div>
               <div className="space-y-2">
                 <Label>Status</Label>
-                <Select value={formData.status} onValueChange={(value: TaskStatus) => setFormData({ ...formData, status: value })}>
+                <Select value={formData.status} onValueChange={(value) => value && setFormData({ ...formData, status: value as TaskStatus })}>
                   <SelectTrigger className="bg-muted/50">
                     <SelectValue />
                   </SelectTrigger>
